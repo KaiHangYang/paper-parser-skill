@@ -14,7 +14,7 @@ def cli():
 
 @cli.command()
 @click.argument('query')
-@click.option('--limit', default=1, help='Number of results to show.')
+@click.option('--limit', default=5, help='Number of results to show.')
 def search(query, limit):
     """Search for papers on arXiv."""
     results = arxiv_client.search_arxiv(query, max_results=limit)
