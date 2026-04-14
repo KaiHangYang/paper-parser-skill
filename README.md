@@ -30,6 +30,12 @@ Standard PDF-to-text tools often produce one massive block of text, which leads 
 
 ## 🛠️ Installation
 
+### From PyPI (Recommended)
+```bash
+pip install paper-parser-skill
+```
+
+### From Source
 ```bash
 # Clone the repository
 git clone https://github.com/KaiHangYang/paper-parser-skill.git

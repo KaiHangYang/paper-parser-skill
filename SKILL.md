@@ -1,5 +1,5 @@
 ---
-name: paper-parser
+name: paper-parser-skill
 description: CLI tool to search, download, and parse academic papers from arXiv into AI-friendly Markdown using MinerU API.
 triggers: paper, arXiv ID, search, download, parse, pp
 ---
@@ -18,9 +18,7 @@ CLI tool for automated academic paper processing.
 ## Setup
 
 ```bash
-git clone https://github.com/KaiHangYang/paper-parser-skill.git
-cd paper-parser-skill
-pip install -e .
+pip install paper-parser-skill
 ```
 
 ## Configuration
