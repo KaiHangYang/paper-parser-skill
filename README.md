@@ -32,8 +32,8 @@ Standard PDF-to-text tools often produce one massive block of text, which leads 
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/paper-reading-skill.git
-cd paper-reading-skill
+git clone https://github.com/KaiHangYang/paper-parser-skill.git
+cd paper-parser-skill
 
 # Install in editable mode
 pip install -e .
@@ -83,6 +83,12 @@ PAPER_WORKSPACE/
         ├── ...
         └── images/          # Extracted figures & tables
 ```
+
+## 🤝 Acknowledgments
+
+- [arXiv](https://arxiv.org/) for the academic paper API.
+- [RapidFuzz](https://github.com/rapidfuzz/RapidFuzz) for fast fuzzy string matching.
+- [MinerU](https://github.com/opendatalab/MinerU) ([mineru.net](https://mineru.net/)) for high-quality PDF-to-Markdown parsing.
 
 ## 📜 License
 
