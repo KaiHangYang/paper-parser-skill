@@ -1,0 +1,14 @@
+# Paper Parser Configuration
+
+# Directory where papers and notes will be stored
+# Default on Windows: %HOMEPATH%/paper-parser-workspace
+# Default on Linux/macOS: ~/paper-parser-workspace
+# PAPER_WORKSPACE=~/Documents/papers
+
+# MinerU API Configuration
+# Get your token from https://mineru.net/
+
+MINERU_API_TOKEN: ""
+MINERU_API_BASE_URL: "https://mineru.net/api/v4"
+MINERU_API_TIMEOUT: 600
+PAPER_WORKSPACE: "~/paper-parser-workspace"
