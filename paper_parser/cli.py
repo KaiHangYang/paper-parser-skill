@@ -19,7 +19,12 @@ def cli():
 @click.option('--limit', default=5, help='Number of results to show.')
 def search(query, limit):
     """Search for papers on arXiv."""
-    results = arxiv_client.search_arxiv(query, max_results=limit)
+    if is_arxiv_id(query):
+        cached = utils.get_cached_paper(query)
+        results = [cached] if cached else arxiv_client.get_by_id(query)
+    else:
+        results = arxiv_client.search_arxiv(query, max_results=limit)
+
     if not results:
         click.echo("No papers found.")
         return
@@ -36,8 +41,12 @@ def download(query_or_id, force):
     """Download a paper PDF by arXiv ID or query."""
     click.echo(f"🔍 Finding paper: {query_or_id}")
     
-    # 1. Resolve paper
-    is_id = arxiv_client.get_by_id(query_or_id) if is_arxiv_id(query_or_id) else []
+    # 1. Resolve paper (local cache → arXiv API → keyword search)
+    if is_arxiv_id(query_or_id):
+        cached = utils.get_cached_paper(query_or_id)
+        is_id = [cached] if cached else arxiv_client.get_by_id(query_or_id)
+    else:
+        is_id = []
     results = is_id if is_id else arxiv_client.search_arxiv(query_or_id, max_results=1)
     
     if not results:
@@ -128,7 +137,11 @@ def submit(target, output_dir, force):
     else:
         # Case 2: arXiv ID — resolve, download if needed, then submit
         click.echo(f"🔍 Finding paper: {target}")
-        is_id = arxiv_client.get_by_id(target) if is_arxiv_id(target) else []
+        if is_arxiv_id(target):
+            cached = utils.get_cached_paper(target)
+            is_id = [cached] if cached else arxiv_client.get_by_id(target)
+        else:
+            is_id = []
         results = is_id if is_id else arxiv_client.search_arxiv(target, max_results=1)
 
         if not results:
@@ -230,7 +243,11 @@ def path(query_or_id):
     """Find the local path of a processed paper."""
     click.echo(f"🔍 Locating paper: {query_or_id}")
     
-    is_id = arxiv_client.get_by_id(query_or_id) if is_arxiv_id(query_or_id) else []
+    if is_arxiv_id(query_or_id):
+        cached = utils.get_cached_paper(query_or_id)
+        is_id = [cached] if cached else arxiv_client.get_by_id(query_or_id)
+    else:
+        is_id = []
     results = is_id if is_id else arxiv_client.search_arxiv(query_or_id, max_results=1)
     
     if not results:
@@ -253,7 +270,11 @@ def all(query_or_id, force):
     """Run full workflow: Search -> Download -> Parse."""
     click.echo(f"🚀 Starting full workflow for: {query_or_id}")
     
-    is_id = arxiv_client.get_by_id(query_or_id) if is_arxiv_id(query_or_id) else []
+    if is_arxiv_id(query_or_id):
+        cached = utils.get_cached_paper(query_or_id)
+        is_id = [cached] if cached else arxiv_client.get_by_id(query_or_id)
+    else:
+        is_id = []
     results = is_id if is_id else arxiv_client.search_arxiv(query_or_id, max_results=1)
     
     if not results:

@@ -35,3 +35,35 @@ def get_paper_dir(paper_id):
     paper_dir = base_dir / safe_id
     paper_dir.mkdir(parents=True, exist_ok=True)
     return paper_dir
+
+def get_cached_paper(paper_id):
+    """Look up a paper from local cache by arXiv ID.
+    
+    Returns a result dict (same shape as arxiv_client results) if found,
+    or None if the paper has not been downloaded locally.
+    """
+    base_dir = get_work_dir()
+    safe_id = sanitize_id(paper_id)
+    paper_dir = base_dir / safe_id
+
+    title_path = paper_dir / "title.md"
+    pdf_path = paper_dir / "paper.pdf"
+
+    if not paper_dir.exists() or not title_path.exists():
+        return None
+
+    # Parse title from "# <title>" format
+    try:
+        raw = title_path.read_text(encoding="utf-8").strip()
+        title = raw.lstrip("#").strip() if raw.startswith("#") else raw
+    except Exception:
+        title = paper_id
+
+    return {
+        "id": paper_id,
+        "title": title,
+        "pdf_url": f"https://arxiv.org/pdf/{paper_id}",
+        "score": 100,
+        "_cached": True,
+        "_has_pdf": pdf_path.exists(),
+    }
