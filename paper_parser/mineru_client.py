@@ -65,7 +65,7 @@ class MinerUClient:
         url = f"{self.base_url}/extract-results/batch/{batch_id}"
         timeout = config.get("MINERU_API_TIMEOUT", 600)
         base_interval = 10   # 初始轮询间隔 (s)
-        max_interval = 60    # 最大轮询间隔 (s)
+        max_interval = 30    # 最大轮询间隔 (s)
         max_http_retries = 3
         start_time = time.time()
         interval = base_interval
