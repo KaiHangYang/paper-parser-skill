@@ -1,7 +1,7 @@
 ---
 name: paper-parser-skill
 description: CLI tool to search, download, and parse academic papers from arXiv into AI-friendly Markdown using MinerU API.
-version: 0.1.3
+version: 0.1.4
 author: KaiHangYang
 homepage: https://github.com/KaiHangYang/paper-parser-skill
 triggers: paper, arXiv ID, search, download, parse, agent-friendly
@@ -10,6 +10,8 @@ metadata:
     requires:
       config:
         - ~/.paper-parser/config.yaml
+      credentials:
+        - MINERU_API_TOKEN  # MinerU API token for PDF parsing service
 ---
 
 # Paper Parser Skill
@@ -26,7 +28,17 @@ CLI tool for automated academic paper processing.
 - **Verified Package**: This tool is published on [PyPI](https://pypi.org/project/paper-parser-skill/) as a standard Python package.
 - **Local Control**: All search results and downloaded PDFs are stored locally in your specified workspace.
 
+**Before Installing:**
+1. Review the source code at [GitHub](https://github.com/KaiHangYang/paper-parser-skill) for unexpected behavior.
+2. Understand that **installing from PyPI executes third-party code** on your system — use a virtual environment or container to limit blast radius if desired.
+3. The `MINERU_API_TOKEN` grants MinerU access to receive and process uploaded PDFs — use a dedicated, revocable token with minimal scope.
+4. Avoid uploading sensitive, unpublished, or confidential documents to MinerU — review their privacy and data retention policies.
+5. For sensitive documents requiring offline parsing, consider local alternatives that do not transmit PDFs externally.
+
 ## 🚀 Setup
+
+> [!WARNING]
+> Installing from PyPI executes third-party code. Use a virtual environment if you want to limit blast radius.
 
 ```bash
 pip install paper-parser-skill==v0.1.3
@@ -36,9 +48,12 @@ pip install paper-parser-skill==v0.1.3
 
 Default path: `~/.paper-parser/config.yaml`
 
+> [!IMPORTANT]
+> `MINERU_API_TOKEN` is **required** for parsing functionality. Get a token at [mineru.net](https://mineru.net/).
+
 ```yaml
 PAPER_WORKSPACE: "~/paper-parser-workspace"
-MINERU_API_TOKEN: "required_token"
+MINERU_API_TOKEN: "your_token_here"  # Required for parsing
 MINERU_API_BASE_URL: "https://mineru.net/api/v4"
 MINERU_API_TIMEOUT: 600
 ```
