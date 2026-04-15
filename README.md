@@ -32,7 +32,7 @@ Standard PDF-to-text tools often produce one massive block of text, which leads 
 
 ### From PyPI (Recommended)
 ```bash
-pip install paper-parser-skill
+pip install paper-parser-skill==v0.1.3
 ```
 
 ### From Source

@@ -29,7 +29,7 @@ CLI tool for automated academic paper processing.
 ## 🚀 Setup
 
 ```bash
-pip install paper-parser-skill
+pip install paper-parser-skill==v0.1.3
 ```
 
 ## ⚙️ Configuration
