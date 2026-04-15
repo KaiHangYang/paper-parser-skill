@@ -60,7 +60,7 @@ class MinerUClient:
         
         return batch_id
 
-    def poll_status(self, batch_id):
+    def poll_status(self, batch_id, update_state_callback=None):
         """Step 3: Poll for completion with exponential backoff + jitter + HTTP retry."""
         url = f"{self.base_url}/extract-results/batch/{batch_id}"
         timeout = config.get("MINERU_API_TIMEOUT", 600)
@@ -105,6 +105,9 @@ class MinerUClient:
 
             file_state = extract_results[0]
             state = file_state.get("state")
+
+            if update_state_callback is not None:
+                update_state_callback(state)
 
             if state == "done":
                 print("[+] Conversion finished!")
@@ -335,12 +338,41 @@ class MinerUClient:
         return len(headers)
 
 def parse_paper(pdf_path, output_dir):
-    """Synchronous: upload → poll (with backoff) → download. For CLI use."""
+    """Synchronous: upload → poll (with backoff) → download. For CLI use.
+    
+    Also writes .parse_task.json on completion so async commands (submit/check)
+    can recognize the paper as already processed.
+    """
     client = MinerUClient()
     batch_id = client.upload_pdf(pdf_path)
-    zip_url = client.poll_status(batch_id)
+
+    output_path = Path(output_dir)
+    task_file = output_path / TASK_FILENAME
+    task_data = {
+        "batch_id": batch_id,
+        "submitted_at": time.time(),
+        "pdf_path": str(Path(pdf_path).absolute()),
+        "output_dir": str(output_path.absolute()),
+        "status": "running"
+    }
+    task_file.write_text(json.dumps(task_data, indent=2), encoding="utf-8")
+
+    def update_state_callback(state):
+        if state != "done":
+            task_data["status"] = state
+            task_file.write_text(json.dumps(task_data, indent=2), encoding="utf-8")
+
+    zip_url = client.poll_status(batch_id, update_state_callback=update_state_callback)
     if zip_url:
-        return client.process_results(zip_url, output_dir)
+        chapter_count = client.process_results(zip_url, output_dir)
+        
+        # Persist task state for submit/check interoperability
+        # 任务已完成
+        task_data["status"] = "done"
+        task_data["completed_at"] = time.time()
+        task_file.write_text(json.dumps(task_data, indent=2), encoding="utf-8")
+        
+        return chapter_count
     return 0
 
 

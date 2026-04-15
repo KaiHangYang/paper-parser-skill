@@ -61,19 +61,52 @@ MINERU_API_TIMEOUT: 600
 
 ## 📖 Usage Guide
 
+### Basic Commands
+
 ```bash
-# 1. Search for a paper
+# Search for a paper by keyword or arXiv ID
 pp search "LLaMA 3"
+pp search 2303.17564
 
-# 2. Complete workflow: Search -> Download -> Parse -> Meta
-pp all "2303.17564"
+# Download a paper PDF (cached if already downloaded)
+pp download 2303.17564
 
-# 3. Parse a local PDF file
+# Find where a paper is stored locally
+pp path 2303.17564
+```
+
+### Parsing — Synchronous (Blocking ⚠️)
+
+> [!WARNING]
+> `pp parse` and `pp all` block until cloud processing completes, which can take several minutes.
+> For agent/automation use, prefer the async workflow below.
+
+```bash
+# Parse a local PDF or an arXiv paper already downloaded
+pp parse 2303.17564
 pp parse ./my_local_paper.pdf
 
-# 4. Find where a paper is stored
-pp path "LLaMA"
+# Full workflow in one shot: Search → Download → Parse
+pp all 2303.17564
 ```
+
+### Parsing — Async (Recommended for Agents ✅)
+
+```bash
+# Step 1: Submit for parsing and return immediately
+#  → auto-downloads PDF if needed, uploads to MinerU, returns batch_id
+pp submit 2303.17564
+
+# Step 2: Check status later — downloads results automatically when done
+pp check 2303.17564
+# → "⏳ Still processing" or "✅ Parsing complete!"
+```
+
+> [!TIP]
+> `pp submit` is **idempotent**: calling it again on the same paper won't re-upload.
+> It checks the existing task status and returns the current state instead.
+> All commands (`parse`, `all`, `submit`, `check`) share the same `.parse_task.json` state file,
+> so you can freely mix sync and async workflows.
 
 ## 📂 Output Structure
 
@@ -83,6 +116,7 @@ PAPER_WORKSPACE/
     ├── paper.pdf            # Original PDF
     ├── title.md             # Paper metadata
     ├── summary.md           # Note-taking template
+    ├── .parse_task.json     # Task state (batch_id, status, timestamps)
     └── markdowns/           # AI-Ready Content
         ├── 01_Introduction.md
         ├── 02_Methods.md
