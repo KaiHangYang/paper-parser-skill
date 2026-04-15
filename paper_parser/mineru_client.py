@@ -1,5 +1,7 @@
 import os
 import time
+import json
+import random
 import requests
 import zipfile
 import io
@@ -7,6 +9,8 @@ import re
 import shutil
 from pathlib import Path
 from .config import config
+
+TASK_FILENAME = ".parse_task.json"
 
 class MinerUClient:
     def __init__(self, token=None, base_url=None):
@@ -57,41 +61,179 @@ class MinerUClient:
         return batch_id
 
     def poll_status(self, batch_id):
-        """Step 3: Poll for completion."""
+        """Step 3: Poll for completion with exponential backoff + jitter + HTTP retry."""
         url = f"{self.base_url}/extract-results/batch/{batch_id}"
         timeout = config.get("MINERU_API_TIMEOUT", 600)
+        base_interval = 10   # 初始轮询间隔 (s)
+        max_interval = 60    # 最大轮询间隔 (s)
+        max_http_retries = 3
         start_time = time.time()
-        
-        print(f"[*] Waiting for conversion to complete (Timeout: {timeout}s)...")
+        interval = base_interval
+
+        print(f"[*] Waiting for conversion (Timeout: {timeout}s, initial interval: {base_interval}s)...")
         while True:
             elapsed = time.time() - start_time
             if elapsed > timeout:
                 raise TimeoutError(f"❌ MinerU conversion timed out after {timeout} seconds.")
 
-            response = requests.get(url, headers=self._get_headers())
-            response.raise_for_status()
-            
+            # HTTP 请求 + 重试
+            response = None
+            for attempt in range(max_http_retries):
+                try:
+                    response = requests.get(url, headers=self._get_headers(), timeout=30)
+                    response.raise_for_status()
+                    break
+                except requests.RequestException as e:
+                    if attempt == max_http_retries - 1:
+                        raise
+                    retry_wait = 2 ** attempt + random.random()
+                    print(f"[!] Request failed ({e}), retrying in {retry_wait:.1f}s...")
+                    time.sleep(retry_wait)
+
             result = response.json()
             if result.get("code") != 0:
                 raise Exception(f"Status Check Error: {result.get('msg')}")
-                
+
             extract_results = result["data"].get("extract_result", [])
             if not extract_results:
-                print(f"[.] Still processing (queueing)... {int(elapsed)}s elapsed")
-                time.sleep(5)
+                # 排队中：指数增大间隔，加 jitter 避免惊群
+                jitter = random.uniform(0, 2)
+                print(f"[.] Queuing... {int(elapsed)}s elapsed, next check in {interval + jitter:.1f}s")
+                time.sleep(interval + jitter)
+                interval = min(interval * 1.5, max_interval)
                 continue
-                
+
             file_state = extract_results[0]
             state = file_state.get("state")
-            
+
             if state == "done":
                 print("[+] Conversion finished!")
                 return file_state.get("full_zip_url")
             elif state == "failed":
                 raise Exception("Conversion failed on server side.")
             else:
-                print(f"[.] Current state: {state}. Polling in 5s... ({int(elapsed)}s elapsed)")
-                time.sleep(5)
+                # 处理中：进度已开始，稍微缩短间隔
+                interval = max(base_interval, int(interval * 0.8))
+                jitter = random.uniform(0, 1)
+                print(f"[.] State: {state}, next check in {interval}s... ({int(elapsed)}s elapsed)")
+                time.sleep(interval + jitter)
+
+    # -------------------------------------------------------------------------
+    # Async / Agent-friendly API
+    # -------------------------------------------------------------------------
+
+    def submit_parse(self, pdf_path, output_dir, force=False):
+        """Upload PDF and persist task state. Returns immediately without waiting.
+
+        Idempotent - safe to call multiple times:
+          - No task file       → upload and submit
+          - Status pending/running → skip re-upload, run check_parse once and return
+          - Status done        → return immediately (already complete)
+          - Status failed      → resubmit (treat as fresh)
+          - force=True         → always resubmit regardless of current state
+        """
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        task_file = output_path / TASK_FILENAME
+
+        # 如果 task 文件存在，先读取它来决八分支
+        if not force and task_file.exists():
+            task_data = json.loads(task_file.read_text(encoding="utf-8"))
+            status = task_data.get("status", "pending")
+
+            if status == "done":
+                print("[+] Task already completed. Skipping submission.")
+                return {"status": "done", "output_dir": task_data["output_dir"],
+                        "batch_id": task_data["batch_id"]}
+
+            if status in ("pending", "running"):
+                elapsed = int(time.time() - task_data["submitted_at"])
+                print(f"[.] Task already submitted (batch_id: {task_data['batch_id']}, "
+                      f"{elapsed}s ago). Checking current state...")
+                # 单次查询并更新任务状态后返回
+                return self.check_parse(str(task_file))
+
+            # status == "failed": fall through to resubmit
+            print(f"[!] Previous task failed (batch_id: {task_data['batch_id']}). Resubmitting...")
+
+        elif force and task_file.exists():
+            old = json.loads(task_file.read_text(encoding="utf-8"))
+            print(f"[!] Force resubmit (previous batch_id: {old.get('batch_id')}).")
+
+        # 新提交（首次、failed、force 三种情况）
+        batch_id = self.upload_pdf(pdf_path)
+        task_data = {
+            "batch_id": batch_id,
+            "submitted_at": time.time(),
+            "pdf_path": str(Path(pdf_path).absolute()),
+            "output_dir": str(output_path.absolute()),
+            "status": "pending",
+        }
+        task_file.write_text(json.dumps(task_data, indent=2), encoding="utf-8")
+        print(f"[+] Task submitted. batch_id: {batch_id}")
+        print(f"[+] Task state saved to: {task_file}")
+        return task_data
+
+    def check_parse(self, task_file):
+        """Single (non-blocking) status check for a previously submitted task.
+        
+        Returns a dict with 'status' key:
+          - 'done'    → results downloaded and ready in output_dir
+          - 'pending' → still queuing/processing, check again later
+          - raises Exception on failure
+        """
+        task_path = Path(task_file)
+        if not task_path.exists():
+            raise FileNotFoundError(f"Task file not found: {task_file}")
+
+        task_data = json.loads(task_path.read_text(encoding="utf-8"))
+        batch_id = task_data["batch_id"]
+        output_dir = task_data["output_dir"]
+        elapsed = int(time.time() - task_data["submitted_at"])
+
+        # 已完成/失败的情况直接返回
+        if task_data.get("status") == "done":
+            print("[+] Task already completed.")
+            return {"status": "done", "output_dir": output_dir}
+        if task_data.get("status") == "failed":
+            raise Exception(f"Task was previously marked as failed. batch_id: {batch_id}")
+
+        # 单次状态查询
+        url = f"{self.base_url}/extract-results/batch/{batch_id}"
+        response = requests.get(url, headers=self._get_headers(), timeout=30)
+        response.raise_for_status()
+
+        result = response.json()
+        if result.get("code") != 0:
+            raise Exception(f"API Error: {result.get('msg')}")
+
+        extract_results = result["data"].get("extract_result", [])
+        if not extract_results:
+            print(f"[.] Still queuing... ({elapsed}s since submission)")
+            return {"status": "pending", "state": "queuing", "elapsed": elapsed}
+
+        file_state = extract_results[0]
+        state = file_state.get("state")
+
+        if state == "done":
+            print("[+] Conversion done! Downloading results...")
+            zip_url = file_state.get("full_zip_url")
+            chapter_count = self.process_results(zip_url, output_dir)
+
+            task_data["status"] = "done"
+            task_data["completed_at"] = time.time()
+            task_path.write_text(json.dumps(task_data, indent=2), encoding="utf-8")
+
+            return {"status": "done", "chapters": chapter_count, "output_dir": output_dir}
+
+        elif state == "failed":
+            task_data["status"] = "failed"
+            task_path.write_text(json.dumps(task_data, indent=2), encoding="utf-8")
+            raise Exception("Conversion failed on server side.")
+
+        else:
+            print(f"[.] Current state: {state} ({elapsed}s since submission)")
+            return {"status": "pending", "state": state, "elapsed": elapsed}
 
     def process_results(self, zip_url, output_dir):
         """Step 4: Download and process result ZIP."""
@@ -193,10 +335,26 @@ class MinerUClient:
         return len(headers)
 
 def parse_paper(pdf_path, output_dir):
-    """Convenience function to run the full MinerU workflow."""
+    """Synchronous: upload → poll (with backoff) → download. For CLI use."""
     client = MinerUClient()
     batch_id = client.upload_pdf(pdf_path)
     zip_url = client.poll_status(batch_id)
     if zip_url:
         return client.process_results(zip_url, output_dir)
     return 0
+
+
+def submit_paper(pdf_path, output_dir, force=False):
+    """Async step 1: idempotent submit. Returns result dict. For agent use."""
+    client = MinerUClient()
+    return client.submit_parse(pdf_path, output_dir, force=force)
+
+
+def check_paper(task_file):
+    """Async step 2: single (non-blocking) status check. For agent use.
+    
+    Returns dict with 'status': 'done' | 'pending'.
+    When 'done', results are already downloaded to output_dir.
+    """
+    client = MinerUClient()
+    return client.check_parse(task_file)

@@ -47,13 +47,48 @@ MINERU_API_TIMEOUT: 600
 
 Alias: `pp`
 
+### Basic Commands
+
 | Command | Argument | Description |
 | --- | --- | --- |
 | `pp search` | `<query>` | Search arXiv papers |
 | `pp download` | `<id/query>` | Download PDF and metadata |
-| `pp parse` | `<id/path>` | Parse PDF into Markdown chapters |
-| `pp all` | `<id/query>` | Full workflow: Search -> Download -> Parse |
 | `pp path` | `<id/query>` | Get local workspace path |
+
+### Parsing Commands
+
+> [!TIP]
+> **Recommended for agent/automation use**: `pp submit` + `pp check` (non-blocking async workflow).
+> `pp parse` and `pp all` block the process until cloud processing completes, which can take several minutes and may time out. Prefer the async approach when calling from an agent or pipeline.
+
+| Command | Argument | Options | Description |
+| --- | --- | --- | --- |
+| `pp submit` | `<id/path>` | `--force` | **[Async ✅]** Submit PDF for parsing and return immediately. Idempotent — safe to call repeatedly. If already submitted and pending, checks status instead of re-uploading. |
+| `pp check` | `<id/path>` | — | **[Async ✅]** Check parse status once. Downloads results automatically when done. |
+| `pp parse` | `<id/path>` | `--force` | **[Blocking ⚠️]** Parse PDF synchronously. Blocks until complete. May time out on slow jobs. |
+| `pp all` | `<id/query>` | `--force` | **[Blocking ⚠️]** Full workflow (Search → Download → Parse). Blocks until complete. May time out on slow jobs. |
+
+### Recommended Async Workflow (for agents)
+
+```bash
+# Step 1: Search for papers by keyword → pick an arXiv ID from results
+pp search "retrieval augmented generation"
+# → 1. Id: 2312.10997  Title: Retrieval-Augmented Generation for ...
+# → 2. Id: 2401.00123  Title: ...
+
+# Step 2: Submit for parsing and return immediately
+#         (PDF is downloaded automatically if not already cached)
+pp submit 2312.10997
+# → ⬇️  Downloading PDF...
+# → ✅ Submitted!  batch_id: xxxxxxxx
+
+# (minutes later, the agent or user calls again)
+
+# Step 3: Check status — downloads & extracts results automatically when done
+pp check 2312.10997
+# → "⏳ Still processing (state: running, 45s since submission)."
+# → or "✅ Parsing complete!  📂 Results in: ~/paper-parser-workspace/2312.10997"
+```
 
 ## 📂 Workspace Structure
 
@@ -62,6 +97,8 @@ PAPER_WORKSPACE/
 └── <arxiv_id>/
     ├── paper.pdf
     ├── title.md
+    ├── summary.md
+    ├── .parse_task.json       ← async task state (batch_id, status, timestamps)
     └── markdowns/
         ├── 01_Introduction.md
         └── images/
@@ -72,3 +109,4 @@ PAPER_WORKSPACE/
 - Python >= 3.8
 - `requests`, `click`, `PyYAML`, `arxiv`, `rapidfuzz`
 - **MinerU API Token**: Required for the parsing stage. Add it to your `config.yaml` file. Get one at [mineru.net](https://mineru.net/).
+
