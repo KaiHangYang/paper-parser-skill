@@ -1,17 +1,58 @@
 import arxiv
 from rapidfuzz import fuzz
 import requests
+import socket
 from pathlib import Path
+
+def _make_client(**kwargs):
+    """Create an arxiv Client with sensible defaults."""
+    return arxiv.Client(
+        delay_seconds=3.0,  # respect arXiv rate limits (avoid HTTP 429)
+        num_retries=3,
+        **kwargs,
+    )
+
+def get_by_id(arxiv_id):
+    """Fetch a single paper by its arXiv ID. Returns a list of 0 or 1 results.
+    
+    Uses the id_list API parameter — fast, precise, and doesn't count against
+    the search rate limit the same way full-text queries do.
+    """
+    client = _make_client()
+    old_timeout = socket.getdefaulttimeout()
+    try:
+        socket.setdefaulttimeout(30)
+        search = arxiv.Search(id_list=[arxiv_id.strip()])
+        results = []
+        for r in client.results(search):
+            paper_id = r.entry_id.split('/')[-1]
+            results.append({
+                'id': paper_id,
+                'title': r.title,
+                'pdf_url': r.pdf_url,
+                'score': 100,
+            })
+        return results
+    except socket.timeout:
+        print("❌ arXiv ID lookup timed out (30s). Check your network/proxy settings.")
+        return []
+    except Exception as e:
+        print(f"❌ arXiv ID lookup failed: {e}")
+        return []
+    finally:
+        socket.setdefaulttimeout(old_timeout)
 
 def search_arxiv(query, max_results=1):
     """
     Search for papers on arXiv with fuzzy matching support.
     Broadens the search and ranks results by similarity to query.
     """
-    client = arxiv.Client()
+    client = _make_client(page_size=max_results * 5)
     
-    # 1. Expand the search results pool for better fuzzy matching coverage
+    old_timeout = socket.getdefaulttimeout()
     try:
+        socket.setdefaulttimeout(30)
+
         search = arxiv.Search(
             query=query,
             max_results=max_results * 5,
@@ -22,8 +63,6 @@ def search_arxiv(query, max_results=1):
         for r in client.results(search):
             paper_id = r.entry_id.split('/')[-1]
             title = r.title
-            
-            # 2. Calculate fuzzy similarity score between query and title
             score = fuzz.partial_ratio(query.lower(), title.lower())
             
             results.append({
@@ -33,15 +72,17 @@ def search_arxiv(query, max_results=1):
                 'score': score
             })
         
-        # 3. Sort by fuzzy score descending
         results.sort(key=lambda x: x['score'], reverse=True)
-        
-        # 4. Limit to the requested number of results
         return results[:max_results]
         
-    except Exception as e:
-        print(f"arXiv search failed: {e}")
+    except socket.timeout:
+        print("❌ arXiv search timed out (30s). Check your network/proxy settings.")
         return []
+    except Exception as e:
+        print(f"❌ arXiv search failed: {e}")
+        return []
+    finally:
+        socket.setdefaulttimeout(old_timeout)
 
 def download_pdf(pdf_url, output_path):
     """Download PDF from URL to local path."""
