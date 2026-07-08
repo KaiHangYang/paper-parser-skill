@@ -41,7 +41,7 @@ CLI tool for automated academic paper processing.
 > Installing from PyPI executes third-party code. Use a virtual environment if you want to limit blast radius.
 
 ```bash
-pip install paper-parser-skill==v0.1.3
+pip install paper-parser-skill==v0.1.4
 ```
 
 ## ⚙️ Configuration
